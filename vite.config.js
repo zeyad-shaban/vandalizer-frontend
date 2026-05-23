@@ -1,9 +1,9 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import path from 'path'
 
-
-// https://vite.dev/config/
+// https://vite.dev
 export default defineConfig({
   server: {
     port: 5173,
@@ -13,4 +13,9 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
+  resolve: {
+    alias: {
+      '@': path.resolve(import.meta.dirname, './src'),
+    },
+  },
 })

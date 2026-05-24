@@ -1,21 +1,18 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { uploadImage } from "../services/api";
-import { Loading } from "../components/Loading"
-import { ErrorMessage } from "../components/ErrorMessage"
+import { Loading } from "../components/Loading";
+import { ErrorMessage } from "../components/ErrorMessage";
 import { createAppError, normalizeError } from "../errors";
 
 export const ImageForm = ({ onSuccess }) => {
     const [loading, setLoading] = useState(false);
     const [err, setErr] = useState(null);
     const [fileName, setFileName] = useState("");
+    const [isDragging, setIsDragging] = useState(false);
+    const inputRef = useRef(null);
 
-    const handleFileChange = async e => {
-        if (loading)
-            return;
-
-        const file = e.target.files?.[0];
-        if (!file)
-            return;
+    const handleSelectedFile = async (file) => {
+        if (loading || !file) return;
 
         if (!file.type.startsWith("image/")) {
             setFileName("");
@@ -23,7 +20,6 @@ export const ImageForm = ({ onSuccess }) => {
                 title: "Unsupported file",
                 message: "Choose an image file such as PNG, JPG, or WEBP.",
             }));
-            e.target.value = "";
             return;
         }
 
@@ -40,18 +36,36 @@ export const ImageForm = ({ onSuccess }) => {
                     message: "The image reached the backend, but no job id came back.",
                 });
             }
-            onSuccess(jobID)
+            onSuccess(jobID);
         } catch (err) {
-            console.error(err)
+            console.error(err);
             setErr(normalizeError(err, {
                 title: "Upload failed",
                 message: "The image could not be uploaded. Check that the backend is running and try again.",
             }));
         } finally {
             setLoading(false);
-            e.target.value = "";
         }
-    }
+    };
+
+    const handleFileChange = async (e) => {
+        const file = e.target.files?.[0];
+        await handleSelectedFile(file);
+        e.target.value = "";
+    };
+
+    const handleDrop = async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(false);
+
+        const file = e.dataTransfer.files?.[0];
+        await handleSelectedFile(file);
+    };
+
+    const openFilePicker = () => {
+        inputRef.current?.click();
+    };
 
     return (
         <main className="min-h-[calc(100vh-88px)] px-4 py-10 text-slate-900">
@@ -62,23 +76,49 @@ export const ImageForm = ({ onSuccess }) => {
                         <h2 className="mt-2 text-2xl font-semibold text-slate-950">New image</h2>
                     </div>
 
-                    <label
-                        className={`flex min-h-40 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed p-6 text-center transition ${loading ? "border-slate-200 bg-slate-50 text-slate-400" : "border-slate-300 bg-slate-50 text-slate-700 hover:border-rose-300 hover:bg-rose-50"}`}
+                    <div
+                        className={`flex min-h-40 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed p-6 text-center transition ${
+                            loading
+                                ? "border-slate-200 bg-slate-50 text-slate-400"
+                                : isDragging
+                                    ? "border-rose-400 bg-rose-50 text-slate-700"
+                                    : "border-slate-300 bg-slate-50 text-slate-700 hover:border-rose-300 hover:bg-rose-50"
+                        }`}
+                        onClick={openFilePicker}
+                        onDragEnter={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (!loading) setIsDragging(true);
+                        }}
+                        onDragOver={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (!loading) setIsDragging(true);
+                        }}
+                        onDragLeave={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setIsDragging(false);
+                        }}
+                        onDrop={handleDrop}
                     >
                         <input
+                            ref={inputRef}
                             className="sr-only"
-                            type='file'
+                            type="file"
                             accept="image/*"
                             onChange={handleFileChange}
                             disabled={loading}
                         />
+
                         <span className="rounded-md bg-slate-950 px-4 py-2 text-sm font-semibold text-white">
                             Choose image
                         </span>
+
                         <span className="mt-3 text-sm text-slate-500">
-                            {fileName || "PNG, JPG, WEBP"}
+                            {isDragging ? "Drop the image here" : (fileName || "PNG, JPG, WEBP")}
                         </span>
-                    </label>
+                    </div>
 
                     {loading ? (
                         <div className="mt-5">
@@ -94,5 +134,5 @@ export const ImageForm = ({ onSuccess }) => {
                 </div>
             </section>
         </main>
-    )
-}
+    );
+};

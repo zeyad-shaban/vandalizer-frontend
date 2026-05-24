@@ -29,7 +29,6 @@ export const startInpainting = (jobID, options) => {
     return apiClient.post(endpoint, {
         mode: options.mode,
         positive_prompt: options.positivePrompt || "",
-        negative_prompt: options.negativePrompt || "",
         num_inference_steps: options.numInferenceSteps,
     });
 }

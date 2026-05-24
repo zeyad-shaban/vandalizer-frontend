@@ -127,7 +127,6 @@ export const ImageDisplay = () => {
     const [prompt, setPrompt] = useState("");
     const [inpaintMode, setInpaintMode] = useState("blur");
     const [positivePrompt, setPositivePrompt] = useState("");
-    const [negativePrompt, setNegativePrompt] = useState("");
     const [numInferenceSteps, setNumInferenceSteps] = useState(4);
     const [resultActionLoading, setResultActionLoading] = useState("");
     const [resultActionErr, setResultActionErr] = useState(null);
@@ -239,7 +238,6 @@ export const ImageDisplay = () => {
         await inpaint({
             mode: inpaintMode,
             positivePrompt: needsDiffusionPrompt ? positivePrompt : "",
-            negativePrompt: needsDiffusionPrompt ? negativePrompt : "",
             numInferenceSteps,
         });
     };
@@ -561,7 +559,7 @@ export const ImageDisplay = () => {
                                 ) : null}
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700" htmlFor="positivePrompt">
-                                        Positive prompt
+                                        Prompt
                                     </label>
                                     <input
                                         id="positivePrompt"
@@ -569,21 +567,7 @@ export const ImageDisplay = () => {
                                         type="text"
                                         value={positivePrompt}
                                         onChange={e => setPositivePrompt(e.target.value)}
-                                        placeholder="clean background, realistic texture"
-                                        disabled={inpaintorLoading || diffusionBlocked}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700" htmlFor="negativePrompt">
-                                        Negative prompt
-                                    </label>
-                                    <input
-                                        id="negativePrompt"
-                                        className="mt-1 min-h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-rose-400 focus:ring-2 focus:ring-rose-100 disabled:bg-slate-100"
-                                        type="text"
-                                        value={negativePrompt}
-                                        onChange={e => setNegativePrompt(e.target.value)}
-                                        placeholder="blurry, artifacts, distorted"
+                                        // placeholder="clean background, realistic texture"
                                         disabled={inpaintorLoading || diffusionBlocked}
                                     />
                                 </div>

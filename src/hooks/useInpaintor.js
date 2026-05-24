@@ -8,6 +8,7 @@ const markReady = () => true;
 export const useInpaintor = (jobID) => {
     const [loading, setLoading] = useState(false);
     const [err, setErr] = useState(null);
+    const [resultVersion, setResultVersion] = useState(0);
     const { data, setData, getResult: getInpaintResult } = useGetServerResult(
         jobID,
         fetchInpaintResult,
@@ -15,17 +16,18 @@ export const useInpaintor = (jobID) => {
         { mapResponse: markReady },
     );
 
-    const inpaint = async (prompt) => {
+    const inpaint = async (options) => {
         try {
             setLoading(true);
             setErr(null);
             setData(false);
-            await startInpainting(jobID, prompt || "");
+            await startInpainting(jobID, options);
             await getInpaintResult({
                 failureTitle: "Inpainting failed",
                 failureMessage: "The backend stopped before it could generate the final image.",
                 timeoutMessage: "Inpainting is taking longer than expected. Check that the worker is running, then try again.",
             });
+            setResultVersion(Date.now());
             return true;
         } catch (err) {
             console.error(err);
@@ -38,5 +40,5 @@ export const useInpaintor = (jobID) => {
             setLoading(false);
         }
     }
-    return { inpaintReady: Boolean(data), inpaint, loading, err };
+    return { inpaintReady: Boolean(data), inpaint, loading, err, resultVersion };
 }

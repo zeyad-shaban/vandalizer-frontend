@@ -135,7 +135,6 @@ export const ImageDisplay = () => {
     const activeBoxCount = activeBoxes.length;
     const needsDiffusionPrompt = inpaintMode === "diffusion";
     const hasDiffusionPrompt = positivePrompt.trim().length > 0;
-    const diffusionBlocked = needsDiffusionPrompt && activeBoxCount !== 1;
 
     const resultImageUrl = inpaintReady
         ? `${getInpaintImgUrl(jobID)}?v=${resultVersion || 0}`
@@ -323,17 +322,10 @@ export const ImageDisplay = () => {
             ? `${activeBoxCount}/${boxItems.length} ${boxItems.length === 1 ? "box" : "boxes"} selected`
             : "Ready";
 
-    const detectionWarning = needsDiffusionPrompt && activeBoxCount !== 1
-        ? activeBoxCount > 1
-            ? "Diffusion only works with one active box. Keep just one box selected before using it."
-            : "Diffusion needs exactly one active box. Add or keep a single box first."
-        : "";
-
     const canRunInpaint = maskReady
         && !inpaintorLoading
         && !segmentorLoading
         && (!needsDiffusionPrompt || hasDiffusionPrompt)
-        && (!needsDiffusionPrompt || !diffusionBlocked);
 
     const toolMode = editorMode === "manual" ? manualTool : "select";
 
@@ -504,7 +496,6 @@ export const ImageDisplay = () => {
                             loadingTitle="Detecting objects"
                             error={detectorErr}
                             success={detectionSummary}
-                            warning={detectionWarning}
                             waiting={editorMode === "manual" ? "Switch to Plus or Erase to edit boxes." : "Ready"}
                         />
                     </StageCard>
@@ -528,10 +519,10 @@ export const ImageDisplay = () => {
                     </StageCard>
 
                     <StageCard title="Inpainting">
-                        <div className={`grid grid-cols-3 gap-2 ${diffusionBlocked ? "opacity-50" : ""}`}>
+                        <div className={`grid grid-cols-3 gap-2`}>
                             {INPAINT_MODES.map(mode => {
                                 const selected = inpaintMode === mode.value;
-                                const disabled = inpaintorLoading || (mode.value === "diffusion" && diffusionBlocked);
+                                const disabled = inpaintorLoading;
                                 return (
                                     <button
                                         key={mode.value}
@@ -551,12 +542,7 @@ export const ImageDisplay = () => {
                         </div>
 
                         {needsDiffusionPrompt ? (
-                            <div className={`space-y-3 ${diffusionBlocked ? "opacity-50" : ""}`}>
-                                {needsDiffusionPrompt && diffusionBlocked ? (
-                                    <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900">
-                                        Replacing is disabled while more than one box is active. Keep only one box selected to enable the replacing prompts.
-                                    </p>
-                                ) : null}
+                            <div className={`space-y-3`}>
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700" htmlFor="positivePrompt">
                                         Prompt
@@ -568,7 +554,7 @@ export const ImageDisplay = () => {
                                         value={positivePrompt}
                                         onChange={e => setPositivePrompt(e.target.value)}
                                         // placeholder="clean background, realistic texture"
-                                        disabled={inpaintorLoading || diffusionBlocked}
+                                        disabled={inpaintorLoading}
                                     />
                                 </div>
                                 <div>
@@ -589,7 +575,7 @@ export const ImageDisplay = () => {
                                         step="1"
                                         value={numInferenceSteps}
                                         onChange={e => setNumInferenceSteps(Number(e.target.value))}
-                                        disabled={inpaintorLoading || diffusionBlocked}
+                                        disabled={inpaintorLoading}
                                     />
                                     <div className="mt-1 flex justify-between text-xs text-slate-500">
                                         <span>4</span>

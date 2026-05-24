@@ -5,8 +5,9 @@ import path from 'path'
 
 // https://vite.dev
 export default defineConfig({
+  envPrefix: ['VITE_', 'API_'],
   server: {
-    port: 5173,
+    port: 3001,
     strictPort: true
   },
   plugins: [

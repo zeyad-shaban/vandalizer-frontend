@@ -2,8 +2,9 @@ import { useState } from "react";
 import { getSegmentImgUrl } from "../services/api"
 
 export const MaskOverlay = ({ jobID, show }) => {
-    const [failed, setFailed] = useState(false);
-    if (!show || failed) return null;
+    const [failedJobID, setFailedJobID] = useState(null);
+
+    if (!show || failedJobID === jobID) return null;
 
     return (
         <img
@@ -14,7 +15,8 @@ export const MaskOverlay = ({ jobID, show }) => {
                 zIndex: 5,         // Ensures it is above the base image
                 objectFit: 'fill'  // Forces it to stretch exactly to the Workspace container
             }}
-            onError={() => setFailed(true)}
+            onError={() => setFailedJobID(jobID)}
+            alt=""
         />
     )
 }

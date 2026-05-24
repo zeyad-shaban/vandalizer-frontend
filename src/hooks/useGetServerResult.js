@@ -1,23 +1,38 @@
-import { useEffect, useRef, useState } from "react";
-import { checkJobStatus, fetchBBoxes } from "../services/api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { checkJobStatus } from "../services/api";
 import { sleep } from "../utils"
+import { createAppError } from "../errors";
 
-export const useGetServerResult = (jobID, fetchingFunc, initValues) => {
+const defaultMapResponse = res => res.data;
+
+export const useGetServerResult = (jobID, fetchingFunc, initValues, options = {}) => {
+    const {
+        initialFetch = true,
+        mapResponse = defaultMapResponse,
+        pollInterval = 1000,
+        timeoutMs = 120000,
+    } = options;
     const [data, setData] = useState(initValues)
     const isComponentAlive = useRef(true);
+    const initialData = useRef(initValues);
 
     useEffect(() => {
         const initFetching = async () => {
+            if (!initialFetch || !jobID || !fetchingFunc) return;
+
             try {
-                const res = await fetchBBoxes(jobID);
-                setData(res.data);
+                const res = await fetchingFunc(jobID);
+                if (isComponentAlive.current) {
+                    setData(mapResponse(res));
+                }
             } catch (err) {
                 if (err.response?.status !== 404)
-                    console.error("Can't run intial fetch ", err);
+                    console.debug("Could not load existing result", err);
             }
         }
+        setData(initialData.current);
         initFetching();
-    }, [jobID]);
+    }, [jobID, fetchingFunc, initialFetch, mapResponse]);
 
 
     useEffect(() => {
@@ -27,26 +42,45 @@ export const useGetServerResult = (jobID, fetchingFunc, initValues) => {
         }
     }, [])
 
-    const getResult = async () => {
+    const getResult = useCallback(async ({
+        failureTitle = "Processing failed",
+        failureMessage = "The backend stopped before this step finished.",
+        timeoutTitle = "Still waiting",
+        timeoutMessage = "This is taking longer than expected. Check that the worker is running and try again.",
+    } = {}) => {
+        const startedAt = Date.now();
+
         try {
             while (isComponentAlive.current) {
-                const status = (await checkJobStatus(jobID)).data.status; // PENDING, RUNNING, SUCCESS, ERROR
-                if (status == "SUCCESS" && isComponentAlive.current) {
+                const status = (await checkJobStatus(jobID)).data.status;
+                if (status === "SUCCESS" && isComponentAlive.current) {
                     const res = await fetchingFunc(jobID);
-                    setData(res.data);
-                    return true;
+                    const nextData = mapResponse(res);
+                    setData(nextData);
+                    return nextData;
                 }
-                else if (status == "FAILURE") {
-                    throw new Error("Server error, job failed to execute detections");
+                else if (status === "FAILURE" || status === "REVOKED") {
+                    throw createAppError({
+                        title: failureTitle,
+                        message: failureMessage,
+                    });
                 }
 
-                await sleep(1000);
+                if (Date.now() - startedAt > timeoutMs) {
+                    throw createAppError({
+                        title: timeoutTitle,
+                        message: timeoutMessage,
+                    });
+                }
+
+                await sleep(pollInterval);
             }
         } catch (err) {
             console.error("Polling error: ", err)
             throw err;
         }
-    }
+        return null;
+    }, [fetchingFunc, jobID, mapResponse, pollInterval, timeoutMs])
 
-    return { data, getResult };
+    return { data, setData, getResult };
 }

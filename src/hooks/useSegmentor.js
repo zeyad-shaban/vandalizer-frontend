@@ -1,11 +1,11 @@
+import { useEffect, useState } from "react";
 import { useGetServerResult } from "./useGetServerResult";
 import { fetchSegmentMasks, startSegmenting } from "../services/api";
-import { useState } from "react";
 import { createAppError, normalizeError } from "../errors";
 
 const markReady = () => true;
 
-export const useSegmentor = (jobID, boxes) => {
+export const useSegmentor = (jobID, boxes, resetKey = "") => {
     const [loading, setLoading] = useState(false);
     const [err, setErr] = useState(null);
 
@@ -14,13 +14,18 @@ export const useSegmentor = (jobID, boxes) => {
         fetchSegmentMasks,
         false,
         { mapResponse: markReady },
-    )
+    );
+
+    useEffect(() => {
+        setErr(null);
+        setData(false);
+    }, [jobID, resetKey, setData]);
 
     const segment = async () => {
         if (!Array.isArray(boxes) || boxes.length === 0) {
             const nextErr = createAppError({
-                title: "No boxes to segment",
-                message: "Run detection first, then segment the boxes it finds.",
+                title: "No active boxes selected",
+                message: "Keep at least one box active before creating a mask.",
             });
             setErr(nextErr);
             return false;
@@ -30,15 +35,18 @@ export const useSegmentor = (jobID, boxes) => {
             setLoading(true);
             setErr(null);
             setData(false);
+
             await startSegmenting(jobID, boxes);
+
             await getResult({
                 failureTitle: "Segmentation failed",
                 failureMessage: "The segmenter stopped before it could create a mask.",
                 timeoutMessage: "Segmentation is taking longer than expected. Check that the worker is running, then try again.",
             });
+
             return true;
         } catch (e) {
-            console.error("Error Starting Segmentation", e)
+            console.error("Error Starting Segmentation", e);
             setErr(normalizeError(e, {
                 title: "Segmentation failed",
                 message: "The segmenter could not finish this request.",
@@ -47,7 +55,7 @@ export const useSegmentor = (jobID, boxes) => {
         } finally {
             setLoading(false);
         }
-    }
+    };
 
     return { maskReady: Boolean(data), segment, loading, err };
-}
+};

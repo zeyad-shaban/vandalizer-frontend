@@ -5,6 +5,6 @@ export const OUT_INPAINT_PATH = "inpainted.png";
 
 export const INPAINT_MODES = [
     { value: "blur", label: "Blur" },
-    { value: "remove", label: "Object removal" },
-    { value: "diffusion", label: "Diffusion" },
+    { value: "remove", label: "Remove" },
+    { value: "diffusion", label: "Replace" },
 ];

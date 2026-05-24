@@ -9,8 +9,8 @@ export const useGetServerResult = (jobID, fetchingFunc, initValues, options = {}
     const {
         initialFetch = true,
         mapResponse = defaultMapResponse,
-        pollInterval = 1000,
-        timeoutMs = 120000,
+        pollInterval = 5000,
+        timeoutMs = 500000,
     } = options;
     const [data, setData] = useState(initValues)
     const isComponentAlive = useRef(true);

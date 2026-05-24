@@ -2,8 +2,6 @@ import axios from 'axios';
 import { OUT_INPAINT_PATH, OUT_BBOXES_PATH, OUT_SEGMENT_PATH, INPUT_IMG_PATH } from "@/constants"
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
-    || import.meta.env.API_BASE_URL
-    || "http://localhost:8080";
 
 const apiClient = axios.create({ baseURL: API_BASE_URL });
 
@@ -31,7 +29,6 @@ export const startInpainting = (jobID, options) => {
     return apiClient.post(endpoint, {
         mode: options.mode,
         positive_prompt: options.positivePrompt || "",
-        negative_prompt: options.negativePrompt || "",
         num_inference_steps: options.numInferenceSteps,
     });
 }

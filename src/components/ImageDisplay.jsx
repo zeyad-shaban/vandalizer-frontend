@@ -1,13 +1,13 @@
-import { BoxesOverlay } from "./BoxesOverlay"
-import { MaskOverlay } from "./MaskOverlay"
-import { useState } from "react";
-import { Loading } from "../components/Loading"
-import Workspace from "./Workspace"
-import { useDetector } from "../hooks/useDetector"
+import { BoxesOverlay } from "./BoxesOverlay";
+import { MaskOverlay } from "./MaskOverlay";
+import { useEffect, useMemo, useState } from "react";
+import { Loading } from "../components/Loading";
+import Workspace from "./Workspace";
+import { useDetector } from "../hooks/useDetector";
 import { ErrorMessage } from "./ErrorMessage";
 import { useNavigate, useParams } from "react-router-dom";
 import { useSegmentor } from "../hooks/useSegmentor";
-import { useInpaintor } from '../hooks/useInpaintor'
+import { useInpaintor } from "../hooks/useInpaintor";
 import { fetchInpaintResult, getInpaintImgUrl, uploadImage } from "../services/api";
 import { INPAINT_MODES } from "../constants";
 import { createAppError, normalizeError } from "../errors";
@@ -47,7 +47,7 @@ const StageStatus = ({ loading, loadingTitle, error, success, warning, waiting }
     }
 
     return <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">{waiting}</p>
-}
+};
 
 const DownloadIcon = () => (
     <svg aria-hidden="true" className="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -83,8 +83,9 @@ export const ImageDisplay = () => {
     const { jobID } = useParams();
     const navigate = useNavigate();
     const [dims, setDims] = useState({ dw: 1, dh: 1, nw: 1, nh: 1 });
+
     const {
-        boxes = [],
+        boxes: detectedBoxes = [],
         scores = [],
         text_labels: textLabels = [],
         detect,
@@ -92,38 +93,53 @@ export const ImageDisplay = () => {
         loading: detectorLoading,
         err: detectorErr,
     } = useDetector(jobID);
+
+    const [editorMode, setEditorMode] = useState("auto"); // auto | manual
+    const [manualTool, setManualTool] = useState("add"); // add | erase
+    const [boxItems, setBoxItems] = useState([]);
+    const [selectedBoxId, setSelectedBoxId] = useState(null);
+
+    const boxStateKey = useMemo(
+        () => boxItems.map((item) => `${item.id}:${item.active ? "1" : "0"}:${item.box.join(",")}`).join("|"),
+        [boxItems],
+    );
+
+    const activeBoxes = useMemo(
+        () => boxItems.filter((item) => item.active).map((item) => item.box),
+        [boxItems],
+    );
+
     const {
         maskReady,
         segment,
         loading: segmentorLoading,
         err: segmentorErr,
-    } = useSegmentor(jobID, boxes);
+    } = useSegmentor(jobID, activeBoxes, boxStateKey);
+
     const {
         inpaint,
         inpaintReady,
         loading: inpaintorLoading,
         err: inpaintorErr,
         resultVersion,
-    } = useInpaintor(jobID)
+    } = useInpaintor(jobID, boxStateKey);
 
     const [prompt, setPrompt] = useState("");
     const [inpaintMode, setInpaintMode] = useState("blur");
     const [positivePrompt, setPositivePrompt] = useState("");
-    const [negativePrompt, setNegativePrompt] = useState("");
     const [numInferenceSteps, setNumInferenceSteps] = useState(4);
     const [resultActionLoading, setResultActionLoading] = useState("");
     const [resultActionErr, setResultActionErr] = useState(null);
 
-    const hasBoxes = boxes.length > 0;
+    const hasAnyBoxes = boxItems.length > 0;
+    const activeBoxCount = activeBoxes.length;
     const needsDiffusionPrompt = inpaintMode === "diffusion";
     const hasDiffusionPrompt = positivePrompt.trim().length > 0;
-    const canRunInpaint = maskReady
-        && !inpaintorLoading
-        && !segmentorLoading
-        && (!needsDiffusionPrompt || hasDiffusionPrompt);
+
     const resultImageUrl = inpaintReady
         ? `${getInpaintImgUrl(jobID)}?v=${resultVersion || 0}`
         : "";
+
     const activeTask = detectorLoading
         ? "Detecting objects"
         : segmentorLoading
@@ -132,32 +148,98 @@ export const ImageDisplay = () => {
                 ? "Generating result"
                 : "";
 
+    useEffect(() => {
+        if (editorMode !== "auto" || !detectorCompleted) {
+            return;
+        }
+
+        const nextItems = detectedBoxes.map((box, index) => ({
+            id: `det-${index}-${box.join("-")}`,
+            box,
+            active: true,
+            source: "auto",
+        }));
+
+        setBoxItems(nextItems);
+        setSelectedBoxId(null);
+    }, [detectedBoxes, detectorCompleted, editorMode]);
+
     const onDimsChange = (newData) => {
         setDims(newData);
-    }
+    };
+
+    const handleAutoMode = () => {
+        setEditorMode("auto");
+        setManualTool("add");
+    };
+
+    const handleManualMode = () => {
+        setEditorMode("manual");
+        setManualTool("add");
+        setBoxItems([]);
+        setSelectedBoxId(null);
+    };
 
     const handleSubmit = async e => {
         e.preventDefault();
+        setSelectedBoxId(null);
         await detect(prompt);
-    }
+    };
 
     const handlePromptChange = e => {
         setPrompt(e.target.value);
-    }
+    };
 
     const handleStartSegmenting = async () => {
         await segment();
-    }
+    };
+
+    const handleSelectBox = (boxId) => {
+        setSelectedBoxId(boxId);
+    };
+
+    const handleKeepBox = (boxId) => {
+        if (editorMode !== "auto") {
+            return;
+        }
+
+        setBoxItems((prev) =>
+            prev.map((item) =>
+                item.id === boxId ? { ...item, active: true } : item
+            )
+        );
+    };
+
+    const handleDeleteBox = (boxId) => {
+        if (editorMode === "manual") {
+            setBoxItems((prev) => prev.filter((item) => item.id !== boxId));
+            if (selectedBoxId === boxId) {
+                setSelectedBoxId(null);
+            }
+            return;
+        }
+
+        setBoxItems((prev) =>
+            prev.map((item) =>
+                item.id === boxId ? { ...item, active: false } : item
+            )
+        );
+    };
+
+    const handleAddBox = (box) => {
+        const newId = `manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        setBoxItems((prev) => [...prev, { id: newId, box, active: true, source: "manual" }]);
+        setSelectedBoxId(null);
+    };
 
     const startInpainting = async () => {
         setResultActionErr(null);
         await inpaint({
             mode: inpaintMode,
             positivePrompt: needsDiffusionPrompt ? positivePrompt : "",
-            negativePrompt: needsDiffusionPrompt ? negativePrompt : "",
             numInferenceSteps,
         });
-    }
+    };
 
     const handleDownloadResult = async () => {
         try {
@@ -180,7 +262,7 @@ export const ImageDisplay = () => {
         } finally {
             setResultActionLoading("");
         }
-    }
+    };
 
     const handleUseResultAsInput = async () => {
         try {
@@ -215,7 +297,7 @@ export const ImageDisplay = () => {
         } finally {
             setResultActionLoading("");
         }
-    }
+    };
 
     if (!jobID) {
         return (
@@ -229,8 +311,23 @@ export const ImageDisplay = () => {
                     />
                 </div>
             </main>
-        )
+        );
     }
+
+    const detectionSummary = editorMode === "manual"
+        ? hasAnyBoxes
+            ? `${boxItems.length} ${boxItems.length === 1 ? "box" : "boxes"} created`
+            : "No boxes created yet."
+        : hasAnyBoxes
+            ? `${activeBoxCount}/${boxItems.length} ${boxItems.length === 1 ? "box" : "boxes"} selected`
+            : "Ready";
+
+    const canRunInpaint = maskReady
+        && !inpaintorLoading
+        && !segmentorLoading
+        && (!needsDiffusionPrompt || hasDiffusionPrompt)
+
+    const toolMode = editorMode === "manual" ? manualTool : "select";
 
     return (
         <main className="min-h-[calc(100vh-88px)] px-4 py-6 text-slate-900">
@@ -238,7 +335,20 @@ export const ImageDisplay = () => {
                 <div className="min-w-0 space-y-4">
                     <div className="relative">
                         <Workspace {...{ jobID, onDimsChange }}>
-                            <BoxesOverlay {...{ boxes, scores, textLabels, normalized: false, dims }} />
+                            <BoxesOverlay
+                                boxes={boxItems}
+                                scores={scores}
+                                textLabels={textLabels}
+                                normalized={false}
+                                dims={dims}
+                                selectedBoxId={selectedBoxId}
+                                toolMode={toolMode}
+                                onToolModeChange={setManualTool}
+                                onSelectBox={handleSelectBox}
+                                onKeepBox={handleKeepBox}
+                                onDeleteBox={handleDeleteBox}
+                                onAddBox={handleAddBox}
+                            />
                             <MaskOverlay jobID={jobID} show={maskReady} />
                         </Workspace>
 
@@ -290,35 +400,103 @@ export const ImageDisplay = () => {
 
                 <aside className="space-y-4">
                     <StageCard title="Detection">
-                        <form className="space-y-3" onSubmit={handleSubmit}>
-                            <label className="block text-sm font-medium text-slate-700" htmlFor="prompt">
-                                Object prompt
-                            </label>
-                            <input
-                                id="prompt"
-                                className="min-h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
-                                type="text"
-                                name="prompt"
-                                value={prompt}
-                                onChange={handlePromptChange}
-                                placeholder="hat, bag, sign"
-                                disabled={detectorLoading}
-                            />
+
+                        <div className="grid grid-cols-2 gap-2">
                             <button
-                                className={actionButtonClass}
-                                type="submit"
-                                disabled={detectorLoading || !prompt.trim()}
+                                type="button"
+                                onClick={handleAutoMode}
+                                className={`flex min-h-10 items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition ${editorMode === "auto"
+                                    ? "border-slate-950 bg-slate-950 text-white"
+                                    : "border-slate-200 bg-white text-slate-700 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700"
+                                    }`}
                             >
-                                {detectorLoading ? "Detecting" : "Detect"}
+                                <span className="text-base">🤖</span>
+                                Auto
                             </button>
-                        </form>
+                            <button
+                                type="button"
+                                onClick={handleManualMode}
+                                className={`flex min-h-10 items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition ${editorMode === "manual"
+                                    ? "border-slate-950 bg-slate-950 text-white"
+                                    : "border-slate-200 bg-white text-slate-700 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700"
+                                    }`}
+                            >
+                                <span className="text-base">✍️</span>
+                                Manual
+                            </button>
+                        </div>
+
+                        {editorMode === "auto" ? (
+                            <form className="space-y-3" onSubmit={handleSubmit}>
+                                <label className="block text-sm font-medium text-slate-700" htmlFor="prompt">
+                                    Object prompt
+                                </label>
+                                <input
+                                    id="prompt"
+                                    className="min-h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
+                                    type="text"
+                                    name="prompt"
+                                    value={prompt}
+                                    onChange={handlePromptChange}
+                                    placeholder="hat, bag, sign"
+                                    disabled={detectorLoading}
+                                />
+                                <button
+                                    className={actionButtonClass}
+                                    type="submit"
+                                    disabled={detectorLoading || !prompt.trim()}
+                                >
+                                    {detectorLoading ? "Detecting" : "Detect"}
+                                </button>
+                            </form>
+                        ) : (
+                            <div className="space-y-3">
+                                <div className="grid grid-cols-2 gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setManualTool("add")}
+                                        className={`flex min-h-10 items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition ${manualTool === "add"
+                                            ? "border-slate-950 bg-slate-950 text-white"
+                                            : "border-slate-200 bg-white text-slate-700 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700"
+                                            }`}
+                                    >
+                                        <span className="inline-flex size-4 items-center justify-center">
+                                            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="size-4">
+                                                <path d="M12 5v14" />
+                                                <path d="M5 12h14" />
+                                            </svg>
+                                        </span>
+                                        Plus
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setManualTool("erase")}
+                                        className={`flex min-h-10 items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition ${manualTool === "erase"
+                                            ? "border-slate-950 bg-slate-950 text-white"
+                                            : "border-slate-200 bg-white text-slate-700 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700"
+                                            }`}
+                                    >
+                                        <span className="inline-flex size-4 items-center justify-center">
+                                            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="size-4">
+                                                <path d="M20 20H9" />
+                                                <path d="M14 4l6 6-8 8H7L3 14l11-10z" />
+                                            </svg>
+                                        </span>
+                                        Erase
+                                    </button>
+                                </div>
+                                <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                                    Manual mode clears the auto-detected boxes. Use Plus to draw new boxes and Erase to remove them.
+                                </p>
+                            </div>
+                        )}
+
                         <StageStatus
                             loading={detectorLoading}
                             loadingTitle="Detecting objects"
                             error={detectorErr}
-                            success={hasBoxes ? `${boxes.length} bounding ${boxes.length === 1 ? "box" : "boxes"} ready` : ""}
-                            warning={detectorCompleted && !hasBoxes ? "No boxes found. Try a different prompt." : ""}
-                            waiting="Ready"
+                            success={detectionSummary}
+                            waiting={editorMode === "manual" ? "Switch to Plus or Erase to edit boxes." : "Ready"}
                         />
                     </StageCard>
 
@@ -327,7 +505,7 @@ export const ImageDisplay = () => {
                             className={actionButtonClass}
                             type="button"
                             onClick={handleStartSegmenting}
-                            disabled={segmentorLoading || detectorLoading || !hasBoxes}
+                            disabled={segmentorLoading || detectorLoading || activeBoxCount === 0}
                         >
                             {segmentorLoading ? "Segmenting" : "Create mask"}
                         </button>
@@ -336,56 +514,46 @@ export const ImageDisplay = () => {
                             loadingTitle="Creating mask"
                             error={segmentorErr}
                             success={maskReady ? "Mask ready" : ""}
-                            waiting={hasBoxes ? "Ready" : "Waiting for boxes"}
+                            waiting={activeBoxCount > 0 ? "Ready" : "Keep at least one box active"}
                         />
                     </StageCard>
 
                     <StageCard title="Inpainting">
-                        <div className="grid grid-cols-3 gap-2">
+                        <div className={`grid grid-cols-3 gap-2`}>
                             {INPAINT_MODES.map(mode => {
                                 const selected = inpaintMode === mode.value;
+                                const disabled = inpaintorLoading;
                                 return (
                                     <button
                                         key={mode.value}
                                         type="button"
                                         aria-pressed={selected}
                                         onClick={() => setInpaintMode(mode.value)}
-                                        disabled={inpaintorLoading}
-                                        className={`min-h-11 rounded-md border px-2 py-2 text-xs font-semibold leading-tight transition sm:text-sm ${selected ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-700 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700"} disabled:cursor-not-allowed disabled:opacity-60`}
+                                        disabled={disabled}
+                                        className={`min-h-11 rounded-md border px-2 py-2 text-xs font-semibold leading-tight transition sm:text-sm ${selected
+                                            ? "border-slate-950 bg-slate-950 text-white"
+                                            : "border-slate-200 bg-white text-slate-700 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700"
+                                            } disabled:cursor-not-allowed disabled:opacity-60`}
                                     >
                                         {mode.label}
                                     </button>
-                                )
+                                );
                             })}
                         </div>
 
                         {needsDiffusionPrompt ? (
-                            <div className="space-y-3">
+                            <div className={`space-y-3`}>
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700" htmlFor="positivePrompt">
-                                        Positive prompt
+                                        Prompt
                                     </label>
                                     <input
                                         id="positivePrompt"
-                                        className="mt-1 min-h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
+                                        className="mt-1 min-h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-rose-400 focus:ring-2 focus:ring-rose-100 disabled:bg-slate-100"
                                         type="text"
                                         value={positivePrompt}
                                         onChange={e => setPositivePrompt(e.target.value)}
-                                        placeholder="clean background, realistic texture"
-                                        disabled={inpaintorLoading}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700" htmlFor="negativePrompt">
-                                        Negative prompt
-                                    </label>
-                                    <input
-                                        id="negativePrompt"
-                                        className="mt-1 min-h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
-                                        type="text"
-                                        value={negativePrompt}
-                                        onChange={e => setNegativePrompt(e.target.value)}
-                                        placeholder="blurry, artifacts, distorted"
+                                        // placeholder="clean background, realistic texture"
                                         disabled={inpaintorLoading}
                                     />
                                 </div>
@@ -425,6 +593,7 @@ export const ImageDisplay = () => {
                         >
                             {inpaintorLoading ? "Generating" : "Generate result"}
                         </button>
+
                         <StageStatus
                             loading={inpaintorLoading}
                             loadingTitle="Generating result"
@@ -436,5 +605,5 @@ export const ImageDisplay = () => {
                 </aside>
             </section>
         </main>
-    )
-}
+    );
+};

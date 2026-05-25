@@ -30,6 +30,7 @@ export const startInpainting = (jobID, options) => {
         mode: options.mode,
         positive_prompt: options.positivePrompt || "",
         num_inference_steps: options.numInferenceSteps,
+        strength: options.strength,
     });
 }
 

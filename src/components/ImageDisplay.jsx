@@ -1,14 +1,13 @@
-import { BoxesOverlay } from "./BoxesOverlay";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { MaskOverlay } from "./MaskOverlay";
-import { useEffect, useMemo, useState } from "react";
+import { ManualMaskCanvas } from "./ManualMaskCanvas";
 import { Loading } from "../components/Loading";
 import Workspace from "./Workspace";
-import { useDetector } from "../hooks/useDetector";
 import { ErrorMessage } from "./ErrorMessage";
 import { useNavigate, useParams } from "react-router-dom";
-import { useSegmentor } from "../hooks/useSegmentor";
+import { useMaskGenerator } from "../hooks/useMaskGenerator";
 import { useInpaintor } from "../hooks/useInpaintor";
-import { fetchInpaintResult, getInpaintImgUrl, uploadImage } from "../services/api";
+import { fetchInpaintResult, getInpaintImgUrl, uploadImage, uploadManualMask } from "../services/api";
 import { INPAINT_MODES } from "../constants";
 import { createAppError, normalizeError } from "../errors";
 
@@ -66,6 +65,41 @@ const RefreshIcon = () => (
     </svg>
 );
 
+const BrushIcon = () => (
+    <svg aria-hidden="true" className="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M18 3l3 3-9.5 9.5-3-3L18 3z" />
+        <path d="M8.5 12.5L6 15c-1.2 1.2-.8 3.2-2.8 4 2.7.5 5-.1 6.3-1.5l2-2" />
+    </svg>
+);
+
+const EraserIcon = () => (
+    <svg aria-hidden="true" className="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M20 20H9" />
+        <path d="M14 4l6 6-8 8H7L3 14l11-10z" />
+    </svg>
+);
+
+const XIcon = () => (
+    <svg aria-hidden="true" className="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M18 6 6 18" />
+        <path d="m6 6 12 12" />
+    </svg>
+);
+
+const ModeIcon = () => (
+    <svg aria-hidden="true" className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 3v3" />
+        <path d="M12 18v3" />
+        <path d="M3 12h3" />
+        <path d="M18 12h3" />
+        <path d="m5.6 5.6 2.1 2.1" />
+        <path d="m16.3 16.3 2.1 2.1" />
+        <path d="m18.4 5.6-2.1 2.1" />
+        <path d="m7.7 16.3-2.1 2.1" />
+        <circle cx="12" cy="12" r="3.5" />
+    </svg>
+);
+
 const IconButton = ({ label, onClick, disabled, children }) => (
     <button
         type="button"
@@ -79,42 +113,63 @@ const IconButton = ({ label, onClick, disabled, children }) => (
     </button>
 );
 
+const ToggleButton = ({ selected, onClick, label, children, disabled }) => (
+    <button
+        type="button"
+        aria-label={label}
+        title={label}
+        aria-pressed={selected}
+        onClick={onClick}
+        disabled={disabled}
+        className={`inline-flex size-10 items-center justify-center rounded-md border text-sm font-semibold transition ${
+            selected
+                ? "border-slate-950 bg-slate-950 text-white"
+                : "border-slate-200 bg-white text-slate-700 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700"
+        } disabled:cursor-not-allowed disabled:opacity-60`}
+    >
+        {children}
+    </button>
+);
+
+const ModeButton = ({ selected, onClick, label, children, disabled }) => (
+    <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        className={`flex min-h-10 items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition ${
+            selected
+                ? "border-slate-950 bg-slate-950 text-white"
+                : "border-slate-200 bg-white text-slate-700 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700"
+        } disabled:cursor-not-allowed disabled:opacity-60`}
+    >
+        {children}
+        {label}
+    </button>
+);
+
 export const ImageDisplay = () => {
     const { jobID } = useParams();
     const navigate = useNavigate();
+    const manualCanvasRef = useRef(null);
     const [dims, setDims] = useState({ dw: 1, dh: 1, nw: 1, nh: 1 });
 
     const {
-        boxes: detectedBoxes = [],
-        scores = [],
-        text_labels: textLabels = [],
-        detect,
-        completed: detectorCompleted,
-        loading: detectorLoading,
-        err: detectorErr,
-    } = useDetector(jobID);
-
-    const [editorMode, setEditorMode] = useState("auto"); // auto | manual
-    const [manualTool, setManualTool] = useState("add"); // add | erase
-    const [boxItems, setBoxItems] = useState([]);
-    const [selectedBoxId, setSelectedBoxId] = useState(null);
-
-    const boxStateKey = useMemo(
-        () => boxItems.map((item) => `${item.id}:${item.active ? "1" : "0"}:${item.box.join(",")}`).join("|"),
-        [boxItems],
-    );
-
-    const activeBoxes = useMemo(
-        () => boxItems.filter((item) => item.active).map((item) => item.box),
-        [boxItems],
-    );
-
-    const {
+        generateMask,
+        acceptUploadedMask,
+        loading: maskLoading,
+        err: maskErr,
         maskReady,
-        segment,
-        loading: segmentorLoading,
-        err: segmentorErr,
-    } = useSegmentor(jobID, activeBoxes, boxStateKey);
+        hasMaskPixels,
+        maskVersion,
+    } = useMaskGenerator(jobID);
+
+    const [maskMode, setMaskMode] = useState("auto");
+    const [manualTool, setManualTool] = useState("brush");
+    const [brushSize, setBrushSize] = useState(34);
+    const [manualMaskState, setManualMaskState] = useState({ modified: false, hasPixels: false });
+    const [manualEditVersion, setManualEditVersion] = useState(0);
+    const [manualUploadLoading, setManualUploadLoading] = useState(false);
+    const [manualUploadErr, setManualUploadErr] = useState(null);
 
     const {
         inpaint,
@@ -122,7 +177,7 @@ export const ImageDisplay = () => {
         loading: inpaintorLoading,
         err: inpaintorErr,
         resultVersion,
-    } = useInpaintor(jobID, boxStateKey);
+    } = useInpaintor(jobID, `${maskVersion}:${manualEditVersion}`);
 
     const [prompt, setPrompt] = useState("");
     const [inpaintMode, setInpaintMode] = useState("blur");
@@ -132,114 +187,132 @@ export const ImageDisplay = () => {
     const [resultActionLoading, setResultActionLoading] = useState("");
     const [resultActionErr, setResultActionErr] = useState(null);
 
-    const hasAnyBoxes = boxItems.length > 0;
-    const activeBoxCount = activeBoxes.length;
     const needsDiffusionPrompt = inpaintMode === "diffusion";
     const hasDiffusionPrompt = positivePrompt.trim().length > 0;
+    const showManualOverlay = maskMode === "manual" || manualMaskState.modified;
+    const effectiveHasMaskPixels = showManualOverlay ? manualMaskState.hasPixels : hasMaskPixels;
+    const processing = maskLoading || inpaintorLoading || manualUploadLoading;
 
     const resultImageUrl = inpaintReady
         ? `${getInpaintImgUrl(jobID)}?v=${resultVersion || 0}`
         : "";
 
-    const activeTask = detectorLoading
-        ? "Detecting objects"
-        : segmentorLoading
-            ? "Building mask"
+    const activeTask = maskLoading
+        ? "Generating mask"
+        : manualUploadLoading
+            ? "Uploading mask"
             : inpaintorLoading
                 ? "Generating result"
                 : "";
 
-    useEffect(() => {
-        if (editorMode !== "auto" || !detectorCompleted) {
-            return;
+    const handleManualMaskStateChange = useCallback((nextState) => {
+        setManualMaskState((prev) => {
+            const modified = Boolean(nextState.modified);
+            const hasPixels = Boolean(nextState.hasPixels);
+            if (prev.modified === modified && prev.hasPixels === hasPixels) {
+                return prev;
+            }
+            return { modified, hasPixels };
+        });
+
+        if (nextState.modified) {
+            setManualEditVersion(Date.now());
         }
-
-        const nextItems = detectedBoxes.map((box, index) => ({
-            id: `det-${index}-${box.join("-")}`,
-            box,
-            active: true,
-            source: "auto",
-        }));
-
-        setBoxItems(nextItems);
-        setSelectedBoxId(null);
-    }, [detectedBoxes, detectorCompleted, editorMode]);
+    }, []);
 
     const onDimsChange = (newData) => {
         setDims(newData);
     };
 
     const handleAutoMode = () => {
-        setEditorMode("auto");
-        setManualTool("add");
+        setMaskMode("auto");
+        setManualUploadErr(null);
     };
 
-    const handleManualMode = () => {
-        setEditorMode("manual");
-        setManualTool("add");
-        setBoxItems([]);
-        setSelectedBoxId(null);
-    };
+    const handleManualMode = async () => {
+        setMaskMode("manual");
+        setManualUploadErr(null);
 
-    const handleSubmit = async e => {
-        e.preventDefault();
-        setSelectedBoxId(null);
-        await detect(prompt);
-    };
-
-    const handlePromptChange = e => {
-        setPrompt(e.target.value);
-    };
-
-    const handleStartSegmenting = async () => {
-        await segment();
-    };
-
-    const handleSelectBox = (boxId) => {
-        setSelectedBoxId(boxId);
-    };
-
-    const handleKeepBox = (boxId) => {
-        if (editorMode !== "auto") {
-            return;
-        }
-
-        setBoxItems((prev) =>
-            prev.map((item) =>
-                item.id === boxId ? { ...item, active: true } : item
-            )
-        );
-    };
-
-    const handleDeleteBox = (boxId) => {
-        if (editorMode === "manual") {
-            setBoxItems((prev) => prev.filter((item) => item.id !== boxId));
-            if (selectedBoxId === boxId) {
-                setSelectedBoxId(null);
+        if (!manualMaskState.modified) {
+            try {
+                await manualCanvasRef.current?.loadFromServer();
+            } catch (err) {
+                setManualUploadErr(normalizeError(err, {
+                    title: "Mask load failed",
+                    message: "The existing mask could not be loaded into the manual canvas.",
+                }));
             }
-            return;
         }
-
-        setBoxItems((prev) =>
-            prev.map((item) =>
-                item.id === boxId ? { ...item, active: false } : item
-            )
-        );
     };
 
-    const handleAddBox = (box) => {
-        const newId = `manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        setBoxItems((prev) => [...prev, { id: newId, box, active: true, source: "manual" }]);
-        setSelectedBoxId(null);
+    const handleGenerateMask = async (e) => {
+        e.preventDefault();
+        setManualUploadErr(null);
+        setManualMaskState({ modified: false, hasPixels: false });
+        setManualEditVersion(Date.now());
+
+        const generatedHasPixels = await generateMask(prompt);
+        try {
+            const loadedHasPixels = await manualCanvasRef.current?.loadFromServer();
+            setManualMaskState({
+                modified: false,
+                hasPixels: Boolean(loadedHasPixels ?? generatedHasPixels),
+            });
+        } catch (err) {
+            console.debug("Could not seed manual canvas", err);
+        }
+    };
+
+    const handleClearManualMask = () => {
+        manualCanvasRef.current?.clearAll(true);
+        setManualEditVersion(Date.now());
     };
 
     const startInpainting = async () => {
+        setManualUploadErr(null);
         setResultActionErr(null);
+
+        if (!effectiveHasMaskPixels) {
+            setManualUploadErr(createAppError({
+                title: "Mask is empty",
+                message: "Create or paint at least one masked pixel before running inpainting.",
+            }));
+            return;
+        }
+
+        const shouldUploadManualMask = maskMode === "manual" || manualMaskState.modified;
+
+        if (shouldUploadManualMask) {
+            try {
+                setManualUploadLoading(true);
+                const stillHasPixels = manualCanvasRef.current?.getHasPixels();
+                if (!stillHasPixels) {
+                    throw createAppError({
+                        title: "Mask is empty",
+                        message: "Create or paint at least one masked pixel before running inpainting.",
+                    });
+                }
+
+                const maskBlob = await manualCanvasRef.current.exportMaskBlob();
+                await uploadManualMask(jobID, maskBlob);
+                acceptUploadedMask(true);
+                setManualMaskState({ modified: false, hasPixels: true });
+            } catch (err) {
+                setManualUploadErr(normalizeError(err, {
+                    title: "Mask upload failed",
+                    message: "The manual mask could not be saved before inpainting.",
+                }));
+                return;
+            } finally {
+                setManualUploadLoading(false);
+            }
+        }
+
         await inpaint({
             mode: inpaintMode,
             positivePrompt: needsDiffusionPrompt ? positivePrompt : "",
             numInferenceSteps,
-            strength: strength,
+            strength,
         });
     };
 
@@ -301,6 +374,22 @@ export const ImageDisplay = () => {
         }
     };
 
+    const maskStatus = useMemo(() => {
+        if (effectiveHasMaskPixels) {
+            return { success: "Mask ready" };
+        }
+
+        if (maskReady && !hasMaskPixels && !manualMaskState.modified) {
+            return { warning: "No masked pixels found." };
+        }
+
+        if (manualMaskState.modified && !manualMaskState.hasPixels) {
+            return { warning: "Manual mask is empty." };
+        }
+
+        return { waiting: maskMode === "auto" ? "Ready" : "Painted mask required" };
+    }, [effectiveHasMaskPixels, hasMaskPixels, manualMaskState.hasPixels, manualMaskState.modified, maskMode, maskReady]);
+
     if (!jobID) {
         return (
             <main className="px-4 py-10">
@@ -316,20 +405,9 @@ export const ImageDisplay = () => {
         );
     }
 
-    const detectionSummary = editorMode === "manual"
-        ? hasAnyBoxes
-            ? `${boxItems.length} ${boxItems.length === 1 ? "box" : "boxes"} created`
-            : "No boxes created yet."
-        : hasAnyBoxes
-            ? `${activeBoxCount}/${boxItems.length} ${boxItems.length === 1 ? "box" : "boxes"} selected`
-            : "Ready";
-
-    const canRunInpaint = maskReady
-        && !inpaintorLoading
-        && !segmentorLoading
-        && (!needsDiffusionPrompt || hasDiffusionPrompt)
-
-    const toolMode = editorMode === "manual" ? manualTool : "select";
+    const canRunInpaint = effectiveHasMaskPixels
+        && !processing
+        && (!needsDiffusionPrompt || hasDiffusionPrompt);
 
     return (
         <main className="min-h-[calc(100vh-88px)] px-4 py-6 text-slate-900">
@@ -337,21 +415,21 @@ export const ImageDisplay = () => {
                 <div className="min-w-0 space-y-4">
                     <div className="relative">
                         <Workspace {...{ jobID, onDimsChange }}>
-                            <BoxesOverlay
-                                boxes={boxItems}
-                                scores={scores}
-                                textLabels={textLabels}
-                                normalized={false}
-                                dims={dims}
-                                selectedBoxId={selectedBoxId}
-                                toolMode={toolMode}
-                                onToolModeChange={setManualTool}
-                                onSelectBox={handleSelectBox}
-                                onKeepBox={handleKeepBox}
-                                onDeleteBox={handleDeleteBox}
-                                onAddBox={handleAddBox}
+                            <MaskOverlay
+                                jobID={jobID}
+                                show={maskReady && !showManualOverlay}
+                                version={maskVersion}
                             />
-                            <MaskOverlay jobID={jobID} show={maskReady} />
+                            <ManualMaskCanvas
+                                ref={manualCanvasRef}
+                                jobID={jobID}
+                                dims={dims}
+                                editable={maskMode === "manual" && !processing}
+                                visible={showManualOverlay}
+                                tool={manualTool}
+                                brushSize={brushSize}
+                                onMaskStateChange={handleManualMaskStateChange}
+                            />
                         </Workspace>
 
                         {activeTask ? (
@@ -401,35 +479,28 @@ export const ImageDisplay = () => {
                 </div>
 
                 <aside className="space-y-4">
-                    <StageCard title="Detection">
-
+                    <StageCard title="Mask Generation">
                         <div className="grid grid-cols-2 gap-2">
-                            <button
-                                type="button"
+                            <ModeButton
+                                label="Auto"
+                                selected={maskMode === "auto"}
                                 onClick={handleAutoMode}
-                                className={`flex min-h-10 items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition ${editorMode === "auto"
-                                    ? "border-slate-950 bg-slate-950 text-white"
-                                    : "border-slate-200 bg-white text-slate-700 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700"
-                                    }`}
+                                disabled={processing}
                             >
-                                <span className="text-base">🤖</span>
-                                Auto
-                            </button>
-                            <button
-                                type="button"
+                                <ModeIcon />
+                            </ModeButton>
+                            <ModeButton
+                                label="Manual"
+                                selected={maskMode === "manual"}
                                 onClick={handleManualMode}
-                                className={`flex min-h-10 items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition ${editorMode === "manual"
-                                    ? "border-slate-950 bg-slate-950 text-white"
-                                    : "border-slate-200 bg-white text-slate-700 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700"
-                                    }`}
+                                disabled={processing}
                             >
-                                <span className="text-base">✍️</span>
-                                Manual
-                            </button>
+                                <BrushIcon />
+                            </ModeButton>
                         </div>
 
-                        {editorMode === "auto" ? (
-                            <form className="space-y-3" onSubmit={handleSubmit}>
+                        {maskMode === "auto" ? (
+                            <form className="space-y-3" onSubmit={handleGenerateMask}>
                                 <label className="block text-sm font-medium text-slate-700" htmlFor="prompt">
                                     Object prompt
                                 </label>
@@ -439,92 +510,90 @@ export const ImageDisplay = () => {
                                     type="text"
                                     name="prompt"
                                     value={prompt}
-                                    onChange={handlePromptChange}
+                                    onChange={(e) => setPrompt(e.target.value)}
                                     placeholder="hat, bag, sign"
-                                    disabled={detectorLoading}
+                                    disabled={maskLoading}
                                 />
                                 <button
                                     className={actionButtonClass}
                                     type="submit"
-                                    disabled={detectorLoading || !prompt.trim()}
+                                    disabled={maskLoading || !prompt.trim()}
                                 >
-                                    {detectorLoading ? "Detecting" : "Detect"}
+                                    {maskLoading ? "Generating" : "Generate Mask"}
                                 </button>
                             </form>
                         ) : (
-                            <div className="space-y-3">
-                                <div className="grid grid-cols-2 gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => setManualTool("add")}
-                                        className={`flex min-h-10 items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition ${manualTool === "add"
-                                            ? "border-slate-950 bg-slate-950 text-white"
-                                            : "border-slate-200 bg-white text-slate-700 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700"
-                                            }`}
+                            <div className="space-y-4">
+                                <div className="flex items-center gap-2">
+                                    <ToggleButton
+                                        label="Brush"
+                                        selected={manualTool === "brush"}
+                                        onClick={() => setManualTool("brush")}
+                                        disabled={processing}
                                     >
-                                        <span className="inline-flex size-4 items-center justify-center">
-                                            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="size-4">
-                                                <path d="M12 5v14" />
-                                                <path d="M5 12h14" />
-                                            </svg>
-                                        </span>
-                                        Plus
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setManualTool("erase")}
-                                        className={`flex min-h-10 items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition ${manualTool === "erase"
-                                            ? "border-slate-950 bg-slate-950 text-white"
-                                            : "border-slate-200 bg-white text-slate-700 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700"
-                                            }`}
+                                        <BrushIcon />
+                                    </ToggleButton>
+                                    <ToggleButton
+                                        label="Eraser"
+                                        selected={manualTool === "eraser"}
+                                        onClick={() => setManualTool("eraser")}
+                                        disabled={processing}
                                     >
-                                        <span className="inline-flex size-4 items-center justify-center">
-                                            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="size-4">
-                                                <path d="M20 20H9" />
-                                                <path d="M14 4l6 6-8 8H7L3 14l11-10z" />
-                                            </svg>
-                                        </span>
-                                        Erase
-                                    </button>
+                                        <EraserIcon />
+                                    </ToggleButton>
+                                    <div className="flex-1" />
+                                    <IconButton
+                                        label="Clear all"
+                                        onClick={handleClearManualMask}
+                                        disabled={processing}
+                                    >
+                                        <XIcon />
+                                    </IconButton>
                                 </div>
-                                <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-                                    Manual mode clears the auto-detected boxes. Use Plus to draw new boxes and Erase to remove them.
-                                </p>
+
+                                <div>
+                                    <div className="mb-2 flex items-center justify-between gap-3">
+                                        <label className="text-sm font-medium text-slate-700" htmlFor="brushSize">
+                                            Brush size
+                                        </label>
+                                        <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">
+                                            {brushSize}px
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <span className="size-2 rounded-full bg-rose-500" aria-hidden="true" />
+                                        <input
+                                            id="brushSize"
+                                            className="w-full accent-rose-600"
+                                            type="range"
+                                            min="6"
+                                            max="96"
+                                            step="2"
+                                            value={brushSize}
+                                            onChange={(e) => setBrushSize(Number(e.target.value))}
+                                            disabled={processing}
+                                        />
+                                        <span className="size-5 rounded-full bg-rose-500" aria-hidden="true" />
+                                    </div>
+                                </div>
                             </div>
                         )}
 
                         <StageStatus
-                            loading={detectorLoading}
-                            loadingTitle="Detecting objects"
-                            error={detectorErr}
-                            success={detectionSummary}
-                            waiting={editorMode === "manual" ? "Switch to Plus or Erase to edit boxes." : "Ready"}
-                        />
-                    </StageCard>
-
-                    <StageCard title="Segmentation">
-                        <button
-                            className={actionButtonClass}
-                            type="button"
-                            onClick={handleStartSegmenting}
-                            disabled={segmentorLoading || detectorLoading || activeBoxCount === 0}
-                        >
-                            {segmentorLoading ? "Segmenting" : "Create mask"}
-                        </button>
-                        <StageStatus
-                            loading={segmentorLoading}
-                            loadingTitle="Creating mask"
-                            error={segmentorErr}
-                            success={maskReady ? "Mask ready" : ""}
-                            waiting={activeBoxCount > 0 ? "Ready" : "Keep at least one box active"}
+                            loading={maskLoading}
+                            loadingTitle="Generating mask"
+                            error={maskErr || manualUploadErr}
+                            success={maskStatus.success}
+                            warning={maskStatus.warning}
+                            waiting={maskStatus.waiting}
                         />
                     </StageCard>
 
                     <StageCard title="Inpainting">
-                        <div className={`grid grid-cols-3 gap-2`}>
+                        <div className="grid grid-cols-3 gap-2">
                             {INPAINT_MODES.map(mode => {
                                 const selected = inpaintMode === mode.value;
-                                const disabled = inpaintorLoading;
+                                const disabled = processing;
                                 return (
                                     <button
                                         key={mode.value}
@@ -544,7 +613,7 @@ export const ImageDisplay = () => {
                         </div>
 
                         {needsDiffusionPrompt ? (
-                            <div className={`space-y-3`}>
+                            <div className="space-y-3">
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700" htmlFor="positivePrompt">
                                         Prompt
@@ -555,8 +624,7 @@ export const ImageDisplay = () => {
                                         type="text"
                                         value={positivePrompt}
                                         onChange={e => setPositivePrompt(e.target.value)}
-                                        // placeholder="clean background, realistic texture"
-                                        disabled={inpaintorLoading}
+                                        disabled={processing}
                                     />
                                 </div>
                                 <div>
@@ -577,7 +645,7 @@ export const ImageDisplay = () => {
                                         step="1"
                                         value={numInferenceSteps}
                                         onChange={e => setNumInferenceSteps(Number(e.target.value))}
-                                        disabled={inpaintorLoading}
+                                        disabled={processing}
                                     />
                                     <div className="mt-1 flex justify-between text-xs text-slate-500">
                                         <span>1</span>
@@ -585,7 +653,6 @@ export const ImageDisplay = () => {
                                     </div>
                                 </div>
                                 <div>
-                                    {/* Top Row: Label and Value badge */}
                                     <div className="flex items-center justify-between">
                                         <label className="text-sm font-medium text-slate-700" htmlFor="strength">
                                             Denoising strength
@@ -594,29 +661,20 @@ export const ImageDisplay = () => {
                                             {strength.toFixed(2)}
                                         </span>
                                     </div>
-
-                                    {/* Hint Row: Clean, muted sub-text that sits perfectly below the label */}
-                                    <p className="mt-1 text-xs leading-normal text-slate-400">
-                                        controls how much of original image is changed. recommended: 0.5-0.8
-                                    </p>
-
-                                    {/* Slider Input */}
                                     <input
                                         id="strength"
-                                        className="mt-2.5 w-full accent-rose-600 cursor-pointer"
+                                        className="mt-2.5 w-full cursor-pointer accent-rose-600"
                                         type="range"
                                         min="0"
                                         max="1"
                                         step="0.01"
                                         value={strength}
                                         onChange={e => setStrength(Number(e.target.value))}
-                                        disabled={inpaintorLoading}
+                                        disabled={processing}
                                     />
-
-                                    {/* Min / Max indicators */}
-                                    <div className="mt-1 flex justify-between text-[10px] font-medium uppercase tracking-wider text-slate-400">
+                                    <div className="mt-1 flex justify-between text-[10px] font-medium uppercase text-slate-400">
                                         <span>Original</span>
-                                        <span>Full Rewrite</span>
+                                        <span>Rewrite</span>
                                     </div>
                                 </div>
                             </div>
@@ -628,15 +686,20 @@ export const ImageDisplay = () => {
                             onClick={startInpainting}
                             disabled={!canRunInpaint}
                         >
-                            {inpaintorLoading ? "Generating" : "Generate result"}
+                            {manualUploadLoading
+                                ? "Uploading Mask"
+                                : inpaintorLoading
+                                    ? "Generating"
+                                    : "Generate Result"}
                         </button>
 
                         <StageStatus
-                            loading={inpaintorLoading}
-                            loadingTitle="Generating result"
-                            error={inpaintorErr}
+                            loading={manualUploadLoading || inpaintorLoading}
+                            loadingTitle={manualUploadLoading ? "Uploading mask" : "Generating result"}
+                            error={manualUploadErr || inpaintorErr}
                             success={inpaintReady ? "Result ready" : ""}
-                            waiting={maskReady ? "Ready" : "Waiting for mask"}
+                            warning={!effectiveHasMaskPixels ? "Create a non-empty mask first." : ""}
+                            waiting={effectiveHasMaskPixels ? "Ready" : "Waiting for mask"}
                         />
                     </StageCard>
                 </aside>

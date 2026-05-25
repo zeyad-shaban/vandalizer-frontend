@@ -1,17 +1,17 @@
 import { useState } from "react";
 import { getSegmentImgUrl } from "../services/api"
 
-export const MaskOverlay = ({ jobID, show }) => {
+export const MaskOverlay = ({ jobID, show, version = 0 }) => {
     const [failedJobID, setFailedJobID] = useState(null);
 
     if (!show || failedJobID === jobID) return null;
 
     return (
         <img
-            src={getSegmentImgUrl(jobID)}
+            src={`${getSegmentImgUrl(jobID)}?v=${version}`}
             className="absolute top-0 left-0 w-full h-full pointer-events-none"
             style={{
-                opacity: 0.6,      // Makes it semi-transparent
+                opacity: 1,
                 zIndex: 5,         // Ensures it is above the base image
                 objectFit: 'fill'  // Forces it to stretch exactly to the Workspace container
             }}

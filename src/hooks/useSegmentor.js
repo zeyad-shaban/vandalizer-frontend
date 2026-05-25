@@ -17,8 +17,10 @@ export const useSegmentor = (jobID, boxes, resetKey = "") => {
     );
 
     useEffect(() => {
-        setErr(null);
-        setData(false);
+        queueMicrotask(() => {
+            setErr(null);
+            setData(false);
+        });
     }, [jobID, resetKey, setData]);
 
     const segment = async () => {

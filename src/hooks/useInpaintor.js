@@ -18,9 +18,11 @@ export const useInpaintor = (jobID, resetKey = "") => {
     );
 
     useEffect(() => {
-        setErr(null);
-        setData(false);
-        setResultVersion(0);
+        queueMicrotask(() => {
+            setErr(null);
+            setData(false);
+            setResultVersion(0);
+        });
     }, [jobID, resetKey, setData]);
 
     const inpaint = async (options) => {

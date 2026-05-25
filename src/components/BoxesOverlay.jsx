@@ -143,7 +143,6 @@ export const BoxesOverlay = ({
     dims,
     selectedBoxId = null,
     toolMode = "select", // "select" | "add" | "erase"
-    onToolModeChange,
     onSelectBox,
     onKeepBox,
     onDeleteBox,

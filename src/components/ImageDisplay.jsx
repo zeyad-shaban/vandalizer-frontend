@@ -127,7 +127,8 @@ export const ImageDisplay = () => {
     const [prompt, setPrompt] = useState("");
     const [inpaintMode, setInpaintMode] = useState("blur");
     const [positivePrompt, setPositivePrompt] = useState("");
-    const [numInferenceSteps, setNumInferenceSteps] = useState(4);
+    const [numInferenceSteps, setNumInferenceSteps] = useState(2);
+    const [strength, setStrength] = useState(0.7);
     const [resultActionLoading, setResultActionLoading] = useState("");
     const [resultActionErr, setResultActionErr] = useState(null);
 
@@ -238,6 +239,7 @@ export const ImageDisplay = () => {
             mode: inpaintMode,
             positivePrompt: needsDiffusionPrompt ? positivePrompt : "",
             numInferenceSteps,
+            strength: strength,
         });
     };
 
@@ -570,16 +572,51 @@ export const ImageDisplay = () => {
                                         id="inferenceSteps"
                                         className="mt-2 w-full accent-rose-600"
                                         type="range"
-                                        min="4"
-                                        max="15"
+                                        min="1"
+                                        max="4"
                                         step="1"
                                         value={numInferenceSteps}
                                         onChange={e => setNumInferenceSteps(Number(e.target.value))}
                                         disabled={inpaintorLoading}
                                     />
                                     <div className="mt-1 flex justify-between text-xs text-slate-500">
+                                        <span>1</span>
                                         <span>4</span>
-                                        <span>15</span>
+                                    </div>
+                                </div>
+                                <div>
+                                    {/* Top Row: Label and Value badge */}
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-sm font-medium text-slate-700" htmlFor="strength">
+                                            Denoising strength
+                                        </label>
+                                        <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">
+                                            {strength.toFixed(2)}
+                                        </span>
+                                    </div>
+
+                                    {/* Hint Row: Clean, muted sub-text that sits perfectly below the label */}
+                                    <p className="mt-1 text-xs leading-normal text-slate-400">
+                                        controls how much of original image is changed. recommended: 0.5-0.8
+                                    </p>
+
+                                    {/* Slider Input */}
+                                    <input
+                                        id="strength"
+                                        className="mt-2.5 w-full accent-rose-600 cursor-pointer"
+                                        type="range"
+                                        min="0"
+                                        max="1"
+                                        step="0.01"
+                                        value={strength}
+                                        onChange={e => setStrength(Number(e.target.value))}
+                                        disabled={inpaintorLoading}
+                                    />
+
+                                    {/* Min / Max indicators */}
+                                    <div className="mt-1 flex justify-between text-[10px] font-medium uppercase tracking-wider text-slate-400">
+                                        <span>Original</span>
+                                        <span>Full Rewrite</span>
                                     </div>
                                 </div>
                             </div>

@@ -72,8 +72,8 @@ export const ImageForm = ({ onSuccess }) => {
             <section className="mx-auto max-w-2xl">
                 <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
                     <div className="mb-6">
-                        <p className="text-sm font-semibold uppercase text-rose-600">Vandalizer</p>
-                        <h2 className="mt-2 text-2xl font-semibold text-slate-950">New image</h2>
+                        <p className="text-base font-semibold uppercase tracking-wide text-rose-800">Upload Image</p>
+                        <h2 className="mt-1 text-sm font-normal text-slate-500 leading-snug">Start by uploading an image to detect, mask, and edit objects.</h2>
                     </div>
 
                     <div

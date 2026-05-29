@@ -10,6 +10,7 @@ import { useInpaintor } from "../hooks/useInpaintor";
 import { fetchInpaintResult, getInpaintImgUrl, uploadImage, uploadManualMask } from "../services/api";
 import { INPAINT_MODES } from "../constants";
 import { createAppError, normalizeError } from "../errors";
+import { LoadingMiniGame } from "./LoadingMiniGame";
 
 const actionButtonClass = "inline-flex min-h-10 items-center justify-center rounded-md bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500";
 
@@ -22,7 +23,7 @@ const StageCard = ({ title, children }) => (
 
 const StageStatus = ({ loading, loadingTitle, error, success, warning, waiting }) => {
     if (loading) {
-        return <Loading compact title={loadingTitle} />
+        return <LoadingMiniGame active={loading} />
     }
 
     if (error) {
